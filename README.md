@@ -240,6 +240,7 @@ ArrayIndexOutOfBoundsException! 💥 에러 발생!
 예상과 다른 결과: 매번 다른 결과
 예외 발생: ArrayIndexOutOfBoundsException 등
 재현 어려움: 타이밍에 따라 발생
+```
 
 
 ### ✅ 해결 방법 1: Thread-Safe 컬렉션 사용
