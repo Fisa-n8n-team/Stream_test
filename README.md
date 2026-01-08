@@ -6,7 +6,7 @@ Java Stream API를 활용한 코드의 성능을 측정하고 개선한 3가지 
 
 ## 🎯 사례 1: ParallelStream에서 결과를 올바르게 수집하기
 
-### 📂 파일: `case03_compare.java`
+### 📂 파일: `Case03Compare.java`
 
 ```java
 package lab02;
