@@ -176,6 +176,72 @@ System.out.println("예상: 1000, 실제: " + results.size());
 // 출력: 897개? 912개? → Race Condition으로 데이터 손실!
 ```
 
+### Race Condition이란
+
+Race Condition 재현 코드
+```
+javapublic class RaceConditionTest {
+    public static void main(String[] args) {
+        for (int test = 1; test <= 5; test++) {
+            System.out.println("\n=== 테스트 " + test + " ===");
+            
+            // ❌ 위험한 방법
+            List<Integer> unsafeList = new ArrayList<>();
+            IntStream.range(0, 1000).parallel()
+                .forEach(i -> unsafeList.add(i));
+            
+            System.out.println("예상: 1000개");
+            System.out.println("실제: " + unsafeList.size() + "개");
+            
+            // ✅ 안전한 방법
+            List<Integer> safeList = IntStream.range(0, 1000)
+                .parallel()
+                .boxed()
+                .collect(Collectors.toList());
+            
+            System.out.println("collect 사용: " + safeList.size() + "개");
+        }
+    }
+}
+```
+
+**실행 결과:**
+```
+=== 테스트 1 ===
+예상: 1000개
+실제: 987개  💥 데이터 손실!
+collect 사용: 1000개 ✅
+
+=== 테스트 2 ===
+예상: 1000개
+실제: 943개  💥 또 다름!
+collect 사용: 1000개 ✅
+
+=== 테스트 3 ===
+예상: 1000개
+ArrayIndexOutOfBoundsException! 💥 에러 발생!
+```
+
+---
+
+## 🎯 핵심 정리
+
+### Race Condition이 발생하는 조건
+```
+✅ 조건 1: 여러 스레드가 실행 중
+✅ 조건 2: 공유 데이터에 접근
+✅ 조건 3: 최소 하나의 쓰기 작업
+✅ 조건 4: 동기화 없음
+
+→ Race Condition 발생! 💥
+증상
+
+데이터 손실: 값이 덮어씌워짐
+예상과 다른 결과: 매번 다른 결과
+예외 발생: ArrayIndexOutOfBoundsException 등
+재현 어려움: 타이밍에 따라 발생
+
+
 ### ✅ 해결 방법 1: Thread-Safe 컬렉션 사용
 
 ```java
