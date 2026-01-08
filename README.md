@@ -1,15 +1,68 @@
 # Java Stream API 성능 개선 사례 발표
 
-## 📌 개요
 Java Stream API를 활용한 코드의 성능을 측정하고 개선한 3가지 사례를 소개합니다.
-
-병렬 스트림 예제를 공부하다가 **"왜 어떤 코드는 forEach를, 어떤 코드는 collect를 사용할까?"** 라는 의문에서 시작된 학습입니다.
 
 ---
 
 ## 🎯 사례 1: ParallelStream에서 결과를 올바르게 수집하기
 
-### 📂 파일: `StreamAPI4.java`
+### 📂 파일: `case03_compare.java`
+
+```java
+package lab02;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+public class case03_compare {
+
+    public static void main(String[] args) {
+        // ===============================
+        // :one: 비효율적인 코드 (출력 포함)
+        // ===============================
+        List<Integer> smallNumbers = Arrays.asList(1, 2, 3, 4, 5);
+
+        long startTime1 = System.nanoTime();
+
+        smallNumbers.parallelStream()
+                .map(n -> {
+                    System.out.println(
+                            Thread.currentThread().getName() + " processing: " + n
+                    );
+                    return n * n;
+                })
+                .forEach(System.out::println);
+
+        long endTime1 = System.nanoTime();
+
+        System.out.println("[비효율 코드 실행 시간(ns)] : " + (endTime1 - startTime1));
+        System.out.println("--------------------------------------------------");
+
+
+        // ===============================
+        // :two: 개선된 코드 (계산 중심)
+        // ===============================
+        List<Integer> largeNumbers = IntStream.rangeClosed(1, 1_000)
+                .boxed()
+                .collect(Collectors.toList());
+
+        long startTime2 = System.nanoTime();
+
+        List<Integer> squaredNumbers = largeNumbers.parallelStream()
+                .map(n -> n * n)
+                .collect(Collectors.toList());
+
+        long endTime2 = System.nanoTime();
+
+        System.out.println("First 10 squared numbers: "
+                + squaredNumbers.subList(0, 10));
+        System.out.println("[개선 코드 실행 시간(ns)] : " + (endTime2 - startTime2));
+        
+    }
+}
+```
 
 ### 🤔 의문의 시작
 
@@ -164,24 +217,61 @@ List<Integer> results = numbers.parallelStream()
 
 ### 📂 파일: `OverusingTest.java`
 
-### ❌ 비효율적인 코드 (test1)
+### ❌ 비효율적인 코드
 
 ```java
-List<String> result = names.stream()
-    .filter(name -> name.startsWith("A"))      // 첫 번째 필터
-    .filter(name -> name.length() > 3)         // 두 번째 필터
-    .map(String::toUpperCase)                  // 첫 번째 변환
-    .map(name -> name + " is a name")          // 두 번째 변환
-    .toList();
+static void test1() {
+		List<String> names = Arrays.asList("Alice", "Bob", "Charlie", "David", "Eve");
+		
+		// [측정 시작] 나노초 단위로 현재 시간 기록
+        long startTime = System.nanoTime();
+        
+		List<String> result = names.stream()
+				.filter(name -> name.startsWith("A"))
+				.filter(name -> name.length() > 3)
+				.map(String::toUpperCase)
+				.map(name -> name + " is a name")
+				.toList();
+		
+		// [측정 종료]
+        long endTime = System.nanoTime();
+
+        // [시간 계산] (종료 시간 - 시작 시간)
+        long durationNs = endTime - startTime;
+        double durationSec = durationNs / 1_000_000_000.0; // 나노초를 초 단위로 변환
+
+        System.out.println("결과: " + result);
+        System.out.println("걸린 시간(나노초): " + durationNs + " ns");
+        System.out.printf("걸린 시간(초): %.9f 초\n", durationSec);
+		
+	}
 ```
 
-### ✅ 개선된 코드 (test2)
+### ✅ 개선된 코드
 
 ```java
-List<String> result = names.stream()
-    .filter(name -> name.startsWith("A") && name.length() > 3)  // 필터 통합
-    .map(name -> name.toUpperCase() + " is a name")             // 변환 통합
-    .toList();
+static void test2() {
+		List<String> names = Arrays.asList("Alice", "Bob", "Charlie", "David", "Eve");
+
+		// [측정 시작] 나노초 단위로 현재 시간 기록
+        long startTime = System.nanoTime();
+        
+		List<String> result = names.stream()
+				.filter(name -> name.startsWith("A") && name.length() > 3)
+				.map(name -> name.toUpperCase() + " is a name")
+				.toList();
+		
+		// [측정 종료]
+        long endTime = System.nanoTime();
+
+        // [시간 계산] (종료 시간 - 시작 시간)
+        long durationNs = endTime - startTime;
+        double durationSec = durationNs / 1_000_000_000.0; // 나노초를 초 단위로 변환
+
+        System.out.println("결과: " + result);
+        System.out.println("걸린 시간(나노초): " + durationNs + " ns");
+        System.out.printf("걸린 시간(초): %.9f 초\n", durationSec);
+	}
 ```
 
 ### 💡 왜 개선되었나?
