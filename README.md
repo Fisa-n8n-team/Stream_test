@@ -1,27 +1,19 @@
-# Java Stream API 성능 개선 사례 발표
+# Java Stream API 성능 테스트 및 개선 사례
 
+## 📌 개요
 Java Stream API를 활용한 코드의 성능을 측정하고 개선한 3가지 사례를 소개합니다.
 
 ---
 
 ## 🎯 사례 1: ParallelStream에서 결과를 올바르게 수집하기
 
-### 📂 파일: `Case03Compare.java`
+### 📂 `ParallelStreamTest.java`
 
+- **Ignoring Parallel Stream Overhead**
 ```java
-package lab02;
-
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
-public class case03_compare {
+public class ParallelStreamTest {
 
     public static void main(String[] args) {
-        // ===============================
-        // :one: 비효율적인 코드 (출력 포함)
-        // ===============================
         List<Integer> smallNumbers = Arrays.asList(1, 2, 3, 4, 5);
 
         long startTime1 = System.nanoTime();
@@ -38,13 +30,16 @@ public class case03_compare {
         long endTime1 = System.nanoTime();
 
         System.out.println("[비효율 코드 실행 시간(ns)] : " + (endTime1 - startTime1));
-        System.out.println("--------------------------------------------------");
+    }
+}
+```
 
+- **Solution: Parallel Stream**
+```java
+public class ParallelStreamTest {
 
-        // ===============================
-        // :two: 개선된 코드 (계산 중심)
-        // ===============================
-        List<Integer> largeNumbers = IntStream.rangeClosed(1, 1_000)
+    public static void main(String[] args) {
+        List<Integer> largeNumbers = IntStream.rangeClosed(1, 1_000_000)
                 .boxed()
                 .collect(Collectors.toList());
 
@@ -59,10 +54,10 @@ public class case03_compare {
         System.out.println("First 10 squared numbers: "
                 + squaredNumbers.subList(0, 10));
         System.out.println("[개선 코드 실행 시간(ns)] : " + (endTime2 - startTime2));
-        
     }
 }
 ```
+</br>
 
 ### 🤔 의문의 시작
 
@@ -106,7 +101,7 @@ list.forEach(item -> logger.info("Processing: " + item));
 list.forEach(item -> database.save(item));
 ```
 
-**핵심**: forEach는 **"각 요소로 뭔가 실행"**할 때 사용하며, 결과를 반환하지 않습니다.
+**핵심**: `forEach`는 **각 요소로 뭔가 실행**할 때 사용하며, 결과를 반환하지 않습니다.
 
 ### ❌ forEach의 잘못된 사용
 
@@ -148,7 +143,43 @@ List<Integer> squaredNumbers = numbers.parallelStream()
 
 ## 🎯 사례 2: ParallelStream에서 Thread-Safe 컬렉션 사용
 
-### 📂 파일: `StreamAPI3.java`
+### 📂 `ThreadSafetyTest.java`
+```java
+@FunctionalInterface
+interface Persu {
+	void run();
+}
+
+public class ThreadSafetyTest {
+
+	static void myFunction(Persu p) {
+		long startNs = System.nanoTime();
+		p.run();
+		long endNs = System.nanoTime();
+		System.out.println("실행시간: " + (endNs - startNs) + "ns");
+	}
+
+	public static void main(String[] args) {
+
+		List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5);
+		List<Integer> results = new ArrayList<>();
+
+		// === Neglecting Thread Safety ==
+		myFunction(() -> numbers.parallelStream().forEach(number -> {
+			results.add(number * 2);
+		}));
+
+		// === :Solution ===
+		List<Integer> results2 = new CopyOnWriteArrayList<>();
+
+		myFunction(() -> numbers.parallelStream().forEach(number -> {
+			results2.add(number * 2);
+		}));
+
+	}
+
+}
+```
 
 ### ❌ 위험한 코드
 
@@ -176,73 +207,6 @@ System.out.println("예상: 1000, 실제: " + results.size());
 // 출력: 897개? 912개? → Race Condition으로 데이터 손실!
 ```
 
-### Race Condition이란
-
-Race Condition 재현 코드
-```
-javapublic class RaceConditionTest {
-    public static void main(String[] args) {
-        for (int test = 1; test <= 5; test++) {
-            System.out.println("\n=== 테스트 " + test + " ===");
-            
-            // ❌ 위험한 방법
-            List<Integer> unsafeList = new ArrayList<>();
-            IntStream.range(0, 1000).parallel()
-                .forEach(i -> unsafeList.add(i));
-            
-            System.out.println("예상: 1000개");
-            System.out.println("실제: " + unsafeList.size() + "개");
-            
-            // ✅ 안전한 방법
-            List<Integer> safeList = IntStream.range(0, 1000)
-                .parallel()
-                .boxed()
-                .collect(Collectors.toList());
-            
-            System.out.println("collect 사용: " + safeList.size() + "개");
-        }
-    }
-}
-```
-
-**실행 결과:**
-```
-=== 테스트 1 ===
-예상: 1000개
-실제: 987개  💥 데이터 손실!
-collect 사용: 1000개 ✅
-
-=== 테스트 2 ===
-예상: 1000개
-실제: 943개  💥 또 다름!
-collect 사용: 1000개 ✅
-
-=== 테스트 3 ===
-예상: 1000개
-ArrayIndexOutOfBoundsException! 💥 에러 발생!
-```
-
----
-
-## 🎯 핵심 정리
-
-### Race Condition이 발생하는 조건
-```
-✅ 조건 1: 여러 스레드가 실행 중
-✅ 조건 2: 공유 데이터에 접근
-✅ 조건 3: 최소 하나의 쓰기 작업
-✅ 조건 4: 동기화 없음
-
-→ Race Condition 발생! 💥
-증상
-
-데이터 손실: 값이 덮어씌워짐
-예상과 다른 결과: 매번 다른 결과
-예외 발생: ArrayIndexOutOfBoundsException 등
-재현 어려움: 타이밍에 따라 발생
-```
-
-
 ### ✅ 해결 방법 1: Thread-Safe 컬렉션 사용
 
 ```java
@@ -257,7 +221,7 @@ numbers.parallelStream().forEach(number -> {
 - 읽기 작업은 락 없이 수행 가능
 - 병렬 처리 환경에서 안전하게 사용 가능
 
-### ✅ 해결 방법 2: collect 사용 (더 추천!)
+### ✅ 해결 방법 2: collect 사용 (더 좋은 방식)
 
 ```java
 List<Integer> results = numbers.parallelStream()
@@ -282,7 +246,7 @@ List<Integer> results = numbers.parallelStream()
 
 ## 🎯 사례 3: Stream 체이닝 최적화
 
-### 📂 파일: `OverusingTest.java`
+### 📂 `OverusingTest.java`
 
 ### ❌ 비효율적인 코드
 
@@ -389,7 +353,7 @@ Alice → filter(startsWith "A" && length > 3) → ✅
 → 약 15배 이상 빠름! 🚀
 ```
 
-### 💡 최적화 팁
+### 💡 최적화
 
 ```java
 // ❌ 나쁜 예
@@ -410,7 +374,7 @@ stream
 
 ## 📋 병렬 처리의 스케일링 효과
 
-### 📂 파일: `case03_compare.java`
+### 📂 `ParallelStreamTest.java`
 
 이 코드는 **작은 데이터셋**과 **큰 데이터셋**에서 병렬 스트림의 성능을 비교합니다.
 
@@ -545,9 +509,9 @@ Thread 8: [875,001...1,000,000] 처리 → 부분 결과 8
 
 ---
 
-## ✨ 결론 및 Best Practices
+<br>
 
-### 📌 핵심 요약
+## ✨ 결론 및 Best Practices
 
 #### 1️⃣ forEach vs collect
 
@@ -575,7 +539,7 @@ parallelStream().forEach(results::add);
 List<Integer> results = new CopyOnWriteArrayList<>();
 parallelStream().forEach(results::add);
 
-// ✅ 안전 (방법 2 - 더 추천!)
+// ✅ 안전 (방법 2 - 중요)
 List<Integer> results = parallelStream()
     .collect(Collectors.toList());
 ```
@@ -642,7 +606,7 @@ System.out.println("실행 시간: " + (endTime - startTime) + " ns");
 
 ## 🎓 학습 포인트
 
-### 이 발표에서 배운 것
+### 이번 테스트에서 배운 것
 
 1. **forEach와 collect는 용도가 다르다**
    - forEach: 부수 효과 실행
@@ -660,7 +624,7 @@ System.out.println("실행 시간: " + (endTime - startTime) + " ns");
    - 중간 연산 통합으로 성능 향상
    - 15배 이상의 성능 차이 가능
 
-### 💡 실무 적용 팁
+### 💡 실전 팁
 
 1. **기본은 순차 스트림**
    ```java
@@ -683,10 +647,10 @@ System.out.println("실행 시간: " + (endTime - startTime) + " ns");
    ```
 
 ---
+</br>
 
-## 🙏 감사합니다!
-
+### 🙏 감사합니다!
 
 ---
-**날짜**: 2026년 1월
-**주제**: Java Stream API 성능 개선 사례
+**날짜**: 2026년 1월  
+**주제**: Java Stream API 성능 테스트 및 개선 사례
